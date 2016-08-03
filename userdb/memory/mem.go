@@ -3,6 +3,7 @@ package memory
 import (
 	"bufio"
 	"encoding/csv"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -12,8 +13,9 @@ import (
 )
 
 type Store struct {
-	hashes map[string]string
-	mtx    sync.RWMutex
+	hashes   map[string]string
+	mtx      sync.RWMutex
+	filename string
 }
 
 func NewMemStore() (*Store, error) {
@@ -29,6 +31,7 @@ func NewMemStore() (*Store, error) {
 
 func (s *Store) LoadHtpasswd(filename string) error {
 
+	s.filename = filename
 	f, err := os.OpenFile(filename, os.O_RDONLY, os.ModeExclusive)
 	if err != nil {
 		return err
@@ -78,7 +81,6 @@ func (s *Store) Check(username, password string) error {
 	return nil
 }
 
-// TODO: add complexity requirements
 func (s *Store) Add(username, password string) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -92,5 +94,17 @@ func (s *Store) Add(username, password string) error {
 		return err
 	}
 	s.hashes[username] = string(hash)
+
+	// persist the details
+	if s.filename != "" {
+		f, err := os.OpenFile(s.filename, os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			return nil
+		}
+
+		defer f.Close()
+		f.WriteString(fmt.Sprintf("\n%s:%s\n", username, hash))
+	}
+
 	return nil
 }
