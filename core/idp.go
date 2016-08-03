@@ -3,6 +3,7 @@ package core
 import (
 	"crypto/rsa"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -182,11 +183,15 @@ func (idp *IDP) getChallengeToken(challengeString string) (*jwt.Token, error) {
 			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
 		}
 
-		return idp.GetVerificationKey()
+		publicKey, err := idp.GetVerificationKey()
+		if err != nil {
+			log.Println("GetVerificationKey(): %s", err.Error())
+		}
+		return publicKey, err
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("jwt.Parse(): %s", err.Error())
 	}
 
 	if !token.Valid {
@@ -254,7 +259,7 @@ func (idp *IDP) NewChallenge(r *http.Request, user string) (challenge *Challenge
 	token, err := idp.getChallengeToken(tokenStr)
 	if err != nil {
 		// Most probably, token can't be verified or parsed
-		return
+		return nil, fmt.Errorf("getChallengeToken(): %s", err.Error())
 	}
 	claims := token.Claims.(jwt.MapClaims)
 
