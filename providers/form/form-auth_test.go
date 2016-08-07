@@ -1,33 +1,132 @@
 package form
 
 import (
-	"net/http"
-	"net/url"
-	"strings"
-	"testing"
-
 	"github.com/janekolszak/idp/core"
 	"github.com/janekolszak/idp/userdb/memory"
+
+	// "fmt"
 	"github.com/stretchr/testify/assert"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
 )
 
 const (
-	loginform = `
+	loginPage = `
 <html>
 <head>
 </head>
 <body>
-<form method="post">
-username <input type="text" name="username"><br>
-password <input type="password" name="password" autocomplete="off"><br>
-<input type="submit">
-<hr>
-{{.}}
+    <form method="post">
+        Username
+        <input type="text" name="username">
+        <br> Password
+        <input type="password" name="password" autocomplete="off">
+        <br>
+        <input type="submit">
+    </form>
+    <body>
+</html>
+`
 
+	registerPage = `
+<html>
+<head>
+</head>
+<body>
+    <form method="post">
+        Name
+        <input type="text" name="name">
+        <br> Last Name
+        <input type="text" name="lastname">
+        <br> Email
+        <input type="text" name="email">
+        <br> Username
+        <input type="text" name="username">
+        <br> Password
+        <input type="password" name="password" autocomplete="off">
+        <br> Confirmed Password
+        <input type="password" name="confirmedpassword" autocomplete="off">
+        <br>
+        <input type="submit">
+    </form>
+    <body>
+</html>
+`
+
+	resetPage = `
+<html>
+<head>
+</head>
+<body>
+Welcome {{.Username}}! Please type in the new password.
+<br>
+    <form method="post">
+        Password
+        <input type="password" name="password" autocomplete="off">
+        <br>
+        Confirm Password
+        <input type="password" name="confirmedpassword" autocomplete="off">
+        <br>
+        <input type="submit">
+    </form>
+    <body>
+</html>
+`
+
+	verifyPage = `
+<html>
+<head>
+</head>
+<body>
+Welcome {{.Username}}
+Your email is verified.
 <body>
 </html>
 `
 )
+
+var (
+	testTemplates string
+)
+
+func TestMain(m *testing.M) {
+	var err error
+	testTemplates, err = ioutil.TempDir("", "idp-form-auth-templates-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(testTemplates) // clean up
+
+	// Write temp files
+	tmpfn := filepath.Join(testTemplates, "login.html")
+	if err := ioutil.WriteFile(tmpfn, []byte(loginPage), 0666); err != nil {
+		panic(err)
+	}
+
+	tmpfn = filepath.Join(testTemplates, "register.html")
+	if err := ioutil.WriteFile(tmpfn, []byte(registerPage), 0666); err != nil {
+		panic(err)
+	}
+
+	tmpfn = filepath.Join(testTemplates, "reset.html")
+	if err = ioutil.WriteFile(tmpfn, []byte(resetPage), 0666); err != nil {
+		panic(err)
+	}
+
+	tmpfn = filepath.Join(testTemplates, "verify.html")
+	if err := ioutil.WriteFile(tmpfn, []byte(verifyPage), 0666); err != nil {
+		panic(err)
+	}
+
+	status := m.Run()
+	os.RemoveAll(testTemplates)
+	os.Exit(status)
+}
 
 func TestNew(t *testing.T) {
 	assert := assert.New(t)
@@ -40,6 +139,7 @@ func TestNew(t *testing.T) {
 		LoginUsernameField: "",
 		LoginPasswordField: "p",
 		UserStore:          s,
+		TemplateDir:        testTemplates,
 	})
 	assert.Equal(core.ErrorInvalidConfig, err)
 	assert.Nil(f)
@@ -49,6 +149,7 @@ func TestNew(t *testing.T) {
 		LoginUsernameField: "u",
 		LoginPasswordField: "",
 		UserStore:          s,
+		TemplateDir:        testTemplates,
 	})
 	assert.Equal(core.ErrorInvalidConfig, err)
 	assert.Nil(f)
@@ -58,6 +159,7 @@ func TestNew(t *testing.T) {
 		LoginUsernameField: "u",
 		LoginPasswordField: "u",
 		UserStore:          s,
+		TemplateDir:        testTemplates,
 	})
 	assert.Equal(core.ErrorInvalidConfig, err)
 	assert.Nil(f)
@@ -67,6 +169,7 @@ func TestNew(t *testing.T) {
 		LoginUsernameField: "u",
 		LoginPasswordField: "p",
 		UserStore:          s,
+		TemplateDir:        testTemplates,
 	})
 	assert.Nil(err)
 	assert.NotNil(f)
@@ -88,10 +191,11 @@ func TestGet(t *testing.T) {
 
 	// Create the provider
 	provider, err := NewFormAuth(Config{
-		LoginForm:          loginform,
+		LoginForm:          loginPage,
 		LoginUsernameField: "username",
 		LoginPasswordField: "password",
 		UserStore:          userdb,
+		TemplateDir:        testTemplates,
 	})
 	assert.Nil(err)
 
@@ -109,10 +213,11 @@ func TestNoHeader(t *testing.T) {
 
 	// Create the provider
 	provider, err := NewFormAuth(Config{
-		LoginForm:          loginform,
+		LoginForm:          loginPage,
 		LoginUsernameField: "username",
 		LoginPasswordField: "password",
 		UserStore:          userdb,
+		TemplateDir:        testTemplates,
 	})
 	assert.Nil(err)
 
@@ -127,10 +232,11 @@ func TestPostSuccess(t *testing.T) {
 
 	// Create the provider
 	provider, err := NewFormAuth(Config{
-		LoginForm:          loginform,
+		LoginForm:          loginPage,
 		LoginUsernameField: "username",
 		LoginPasswordField: "password",
 		UserStore:          userdb,
+		TemplateDir:        testTemplates,
 
 		// Validation options:
 		Username: Complexity{
@@ -161,10 +267,11 @@ func TestPostFail(t *testing.T) {
 
 	// Create the provider
 	provider, err := NewFormAuth(Config{
-		LoginForm:          loginform,
+		LoginForm:          loginPage,
 		LoginUsernameField: "username",
 		LoginPasswordField: "password",
 		UserStore:          userdb,
+		TemplateDir:        testTemplates,
 
 		// Validation options:
 		Username: Complexity{

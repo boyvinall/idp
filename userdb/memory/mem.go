@@ -9,6 +9,8 @@ import (
 	"sync"
 
 	"github.com/janekolszak/idp/core"
+	"github.com/janekolszak/idp/userdb"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -106,5 +108,27 @@ func (s *Store) Add(username, password string) error {
 		f.WriteString(fmt.Sprintf("\n%s:%s\n", username, hash))
 	}
 
+	return nil
+}
+
+func (s *Store) Insert(user *userdb.User, password string) (userid string, err error) {
+	return "", nil
+}
+func (s *Store) GetWithID(id string) (user *userdb.User, err error) {
+	return nil, nil
+}
+func (s *Store) GetWithUsername(username string) (user *userdb.User, err error) {
+	return nil, nil
+}
+func (s *Store) SetPasswordWithID(id, password string) error {
+	return nil
+}
+func (s *Store) Update(user *userdb.User) error {
+	return nil
+}
+func (s *Store) DeleteWithID(id string) error {
+	return nil
+}
+func (s *Store) SetIsVerifiedWithID(id string) error {
 	return nil
 }

@@ -2,9 +2,11 @@ package form
 
 import (
 	"fmt"
+	"github.com/asaskevich/govalidator"
 	"html/template"
 	"net/http"
 	"net/url"
+	"path/filepath"
 
 	"github.com/janekolszak/idp/core"
 	"github.com/janekolszak/idp/userdb"
@@ -25,13 +27,18 @@ type Config struct {
 	RegisterPasswordField        string
 	RegisterPasswordConfirmField string
 
-	Username  Complexity
-	Password  Complexity
-	UserStore userdb.Store
+	Username     Complexity
+	Password     Complexity
+	UserStore    userdb.UserStore
+	UserVerifier userdb.UserVerifier
+
+	// Directory with all needed html templates
+	TemplateDir string
 }
 
 type FormAuth struct {
 	Config
+	templates *template.Template
 }
 
 func NewFormAuth(c Config) (*FormAuth, error) {
@@ -41,15 +48,22 @@ func NewFormAuth(c Config) (*FormAuth, error) {
 		return nil, core.ErrorInvalidConfig
 	}
 
-	if len(c.Username.Patterns) == 0 {
-		c.Username.Patterns = []string{".*"}
-	}
-
 	if len(c.Password.Patterns) == 0 {
 		c.Password.Patterns = []string{".*"}
 	}
 
 	auth := FormAuth{Config: c}
+
+	govalidator.TagMap["password"] = govalidator.Validator(func(str string) bool {
+		return auth.Config.Password.Validate(str)
+	})
+
+	var err error
+	auth.templates, err = template.ParseGlob(filepath.Join(c.TemplateDir, "*.html"))
+	if err != nil {
+		return nil, err
+	}
+
 	return &auth, nil
 }
 
@@ -77,30 +91,62 @@ func (f *FormAuth) Check(r *http.Request) (user string, err error) {
 	return
 }
 
-func (f *FormAuth) Register(r *http.Request) (user string, err error) {
-	user = r.FormValue(f.RegisterUsernameField)
-	password := r.FormValue(f.RegisterPasswordField)
-	confirm := r.FormValue(f.RegisterPasswordConfirmField)
-
-	if password != confirm {
-		err = core.ErrorPasswordMismatch
-	}
-
-	if !f.Config.Password.Validate(password) {
-		err = core.ErrorComplexityFailed
-	}
-
-	if !f.Config.Username.Validate(user) {
-		err = core.ErrorComplexityFailed
-	}
-
+func (f *FormAuth) Register(r *http.Request) (id string, err error) {
+	// Parse and validate posted form
+	data, err := NewRegisterPOST(r)
 	if err != nil {
-		user = ""
 		return
 	}
 
-	err = f.UserStore.Add(user, password)
+	user := userdb.User{
+		Username:  data.Username,
+		Email:     data.Email,
+		FirstName: data.FirstName,
+		LastName:  data.LastName,
+	}
+
+	id, err = f.UserStore.Insert(&user, data.Password)
+	if err != nil {
+		return
+	}
+
+	_, err = f.UserVerifier.Push(id, data.Username, data.Email)
 	return
+}
+
+func (f *FormAuth) WriteRegister(w http.ResponseWriter, r *http.Request) error {
+	return f.templates.ExecuteTemplate(w, "register.html", nil)
+}
+
+func (f *FormAuth) Verify(r *http.Request) (userid string, err error) {
+	// Parse and validate posted form
+	data, err := NewVerifyGET(r)
+	if err != nil {
+		return
+	}
+
+	userid, err = f.UserVerifier.Verify(data.Code)
+	if err != nil {
+		return
+	}
+
+	err = f.UserStore.SetIsVerifiedWithID(userid)
+	return
+}
+
+func (f *FormAuth) WriteVerify(w http.ResponseWriter, r *http.Request, userid string) error {
+	user, err := f.UserStore.GetWithID(userid)
+	if err != nil {
+		return err
+	}
+
+	data := map[string]string{
+		"Username":  user.Username,
+		"FirstName": user.FirstName,
+		"LastName":  user.LastName,
+		"Email":     user.Email,
+	}
+	return f.templates.ExecuteTemplate(w, "verify.html", data)
 }
 
 func (f *FormAuth) WriteError(w http.ResponseWriter, r *http.Request, err error) error {

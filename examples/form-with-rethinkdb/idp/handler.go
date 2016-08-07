@@ -41,8 +41,15 @@ func CreateHandler(config HandlerConfig) (*IdpHandler, error) {
 func (h *IdpHandler) Attach(router *httprouter.Router) {
 	router.GET("/", h.HandleChallenge())
 	router.POST("/", h.HandleChallenge())
+
 	router.GET("/consent", h.HandleConsentGET())
 	router.POST("/consent", h.HandleConsentPOST())
+
+	router.GET("/register", h.HandleRegisterGET())
+	router.POST("/register", h.HandleRegisterPOST())
+
+	router.GET("/verify", h.HandleVerifyGET())
+
 	if h.StaticFiles != "" {
 		router.ServeFiles("/static/*filepath", http.Dir(h.StaticFiles))
 	}
@@ -155,5 +162,57 @@ func (h *IdpHandler) HandleConsentPOST() httprouter.Handle {
 			h.Provider.WriteError(w, r, err)
 			return
 		}
+	}
+}
+
+func (h *IdpHandler) HandleRegisterGET() httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+		fmt.Println("-> HandleRegisterGET")
+		defer fmt.Println("<- HandleRegisterGET")
+
+		err := h.Provider.WriteRegister(w, r)
+		if err != nil {
+			// Server error
+			fmt.Println(err.Error())
+			h.Provider.WriteError(w, r, err)
+			return
+		}
+	}
+}
+
+func (h *IdpHandler) HandleRegisterPOST() httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+		fmt.Println("-> HandleRegisterPOST")
+		defer fmt.Println("<- HandleRegisterPOST")
+
+		userid, err := h.Provider.Register(r)
+		if err != nil {
+			fmt.Println(err.Error())
+			h.Provider.WriteError(w, r, err)
+			return
+		}
+
+		// TODO: Remove autologin
+		// Save the RememberMe cookie
+		err = h.CookieProvider.SetCookie(w, r, userid)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+	}
+}
+
+func (h *IdpHandler) HandleVerifyGET() httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+		fmt.Println("-> HandleVerifyGET")
+		defer fmt.Println("<- HandleVerifyGET")
+
+		userid, err := h.Provider.Verify(r)
+		if err != nil {
+			fmt.Println(err.Error())
+			h.Provider.WriteError(w, r, err)
+			return
+		}
+
+		h.Provider.WriteVerify(w, r, userid)
 	}
 }

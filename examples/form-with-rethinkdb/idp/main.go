@@ -3,20 +3,22 @@ package main
 import (
 	"flag"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
-	// "github.com/boj/rethinkstore"
-	"github.com/gorilla/sessions"
+	"github.com/boj/rethinkstore"
 	"github.com/janekolszak/idp/core"
 	"github.com/janekolszak/idp/helpers"
 	"github.com/janekolszak/idp/providers/cookie"
 	"github.com/janekolszak/idp/providers/form"
-	"github.com/janekolszak/idp/userdb/memory"
+	"github.com/janekolszak/idp/userdb"
+	"github.com/janekolszak/idp/userdb/rethinkdb/store"
+	"github.com/janekolszak/idp/userdb/rethinkdb/verifier"
 	"github.com/julienschmidt/httprouter"
-
-	_ "github.com/mattn/go-sqlite3"
+	r "gopkg.in/dancannon/gorethink.v2"
 )
 
 const (
@@ -67,13 +69,30 @@ func main() {
 	// Read the configuration file
 	hydraConfig := helpers.NewHydraConfig(*configPath)
 
-	// Setup the providers
-	userdb, err := memory.NewMemStore()
+	session, err := r.Connect(r.ConnectOpts{
+		Address:  os.Getenv("DATABASE_URL"),
+		Database: os.Getenv("DATABASE_NAME"),
+	})
 	if err != nil {
 		panic(err)
 	}
 
-	err = userdb.LoadHtpasswd(*htpasswdPath)
+	// Setup the providers
+	db, err := store.NewStore(session)
+	if err != nil {
+		panic(err)
+	}
+
+	testUser := &userdb.User{
+		FirstName: "Joe",
+		LastName:  "Doe",
+		Username:  "u",
+		Email:     "joe@example.com",
+	}
+
+	db.Insert(testUser, "p")
+
+	ver, err := verifier.NewVerifier(session)
 	if err != nil {
 		panic(err)
 	}
@@ -83,8 +102,11 @@ func main() {
 		LoginUsernameField: "username",
 		LoginPasswordField: "password",
 
+		TemplateDir: os.Getenv("TEMPLATE_DIR"),
+
 		// Store for
-		UserStore: userdb,
+		UserStore:    db,
+		UserVerifier: ver,
 
 		// Validation options:
 		Username: form.Complexity{
@@ -113,16 +135,12 @@ func main() {
 		MaxAge: time.Minute * 1,
 	}
 
-	// challengeCookieStore := sessions.NewFilesystemStore("", []byte("something-very-secret"))
-	challengeCookieStore := sessions.NewCookieStore([]byte("something-very-secret"))
-
-	// TODO: Uncomment when rethinkstore is fixed
-	// challengeCookieStore, err := rethinkstore.NewRethinkStore(os.Getenv("DATABASE_URL"), os.Getenv("DATABASE_NAME"), "challenges", 5, 5, []byte("something-very-secret"))
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer challengeCookieStore.Close()
-	// challengeCookieStore.MaxAge(60 * 5) // 5 min
+	challengeCookieStore, err := rethinkstore.NewRethinkStore(os.Getenv("DATABASE_URL"), os.Getenv("DATABASE_NAME"), "challenges", 5, 5, []byte("something-very-secret"))
+	if err != nil {
+		panic(err)
+	}
+	defer challengeCookieStore.Close()
+	challengeCookieStore.MaxAge(60 * 5) // 5 min
 
 	idp := core.NewIDP(&core.IDPConfig{
 		ClusterURL:            *hydraURL,
@@ -150,9 +168,42 @@ func main() {
 		StaticFiles:    *staticFiles,
 	})
 
+	emailPort, err := strconv.Atoi(os.Getenv("EMAIL_PORT"))
+	if err != nil {
+		panic(err)
+	}
+
+	testWorkerOpts := verifier.WorkerOpts{
+		Session:         session,
+		EndpointAddress: os.Getenv("CONSENT_URL") + "/verify",
+		RequestMaxAge:   time.Minute * 1,
+		CleanupInterval: time.Minute * 60,
+
+		EmailerOpts: helpers.EmailerOpts{
+			Host:         os.Getenv("EMAIL_HOST"),
+			Port:         emailPort,
+			User:         os.Getenv("EMAIL_USER"),
+			Password:     os.Getenv("EMAIL_PASS"),
+			From:         os.Getenv("EMAIL_FROM"),
+			TextTemplate: template.Must(template.New("tmpl").Parse("Hi! {{.Username}}, visit {{.URL}} to verify!")),
+			HtmlTemplate: template.Must(template.New("tmpl").Parse("Hi! {{.Username}}, click <a href={{.URL}}> here </a> to verify!")),
+			Domain:       "localhost:3000",
+		},
+	}
+	verifierWorker, err := verifier.NewWorker(testWorkerOpts)
+	if err != nil {
+		panic(err)
+	}
+	err = verifierWorker.Start()
+	if err != nil {
+		panic(err)
+	}
+
 	router := httprouter.New()
 	handler.Attach(router)
 	http.ListenAndServe(":3000", router)
+
+	verifierWorker.Stop()
 
 	idp.Close()
 }
