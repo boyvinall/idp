@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/net/context"
+
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/sessions"
 	hclient "github.com/ory-am/hydra/client"
+	"github.com/ory-am/hydra/firewall"
 	hjwk "github.com/ory-am/hydra/jwk"
 	hoauth2 "github.com/ory-am/hydra/oauth2"
 	hydra "github.com/ory-am/hydra/sdk"
@@ -134,14 +137,17 @@ func (idp *IDP) getVerificationKey() (*rsa.PublicKey, error) {
 
 	jwk, err := idp.hc.JWK.GetKey(hoauth2.ConsentChallengeKey, "public")
 	if err != nil {
+		log.Println("getVerificationKey():", err.Error())
 		return nil, err
 	}
 
 	rsaKey, ok := hjwk.First(jwk.Keys).Key.(*rsa.PublicKey)
 	if !ok {
+		log.Println("getVerificationKey(): !ok")
 		return nil, ErrorBadPublicKey
 	}
 
+	log.Println("getVerificationKey(): OK")
 	return rsaKey, nil
 }
 
@@ -186,6 +192,11 @@ func (idp *IDP) Connect() error {
 	return nil
 }
 
+func (idp *IDP) WardenAuthorized(ctx context.Context, token string, scopes ...string) (*firewall.Context, error) {
+	wardenctx, err := idp.hc.Warden.Authorized(ctx, token, scopes...)
+	return wardenctx, err
+}
+
 // Parse and verify the challenge JWT
 func (idp *IDP) getChallengeToken(challengeString string) (*jwt.Token, error) {
 	token, err := jwt.Parse(challengeString, func(token *jwt.Token) (interface{}, error) {
@@ -196,7 +207,7 @@ func (idp *IDP) getChallengeToken(challengeString string) (*jwt.Token, error) {
 
 		publicKey, err := idp.GetVerificationKey()
 		if err != nil {
-			log.Println("GetVerificationKey(): %s", err.Error())
+			log.Println("GetVerificationKey():", err.Error())
 		}
 		return publicKey, err
 	})
