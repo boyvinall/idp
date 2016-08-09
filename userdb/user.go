@@ -13,6 +13,10 @@ type User struct {
 	RegistrationTime time.Time `schema:"-"         json:"registrationTime"   gorethink:"registrationTime"`
 }
 
+func (u *User) GetID() string {
+	return u.ID
+}
+
 func (u *User) GetUsername() string {
 	return u.Username
 }

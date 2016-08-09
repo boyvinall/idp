@@ -18,7 +18,9 @@ type UserInfo interface {
 }
 
 type UserStore interface {
-	Check(username, password string) error
+	Check(username, password string) (userid string, err error)
+	CheckWithEmail(email, password string) (userid string, err error)
+
 	Insert(user *User, password string) (userid string, err error)
 	GetWithID(id string) (user *User, err error)
 	GetWithUsername(username string) (user *User, err error)

@@ -1,12 +1,12 @@
 package store
 
 import (
+	"time"
+
 	"github.com/janekolszak/idp/core"
 	"github.com/janekolszak/idp/userdb"
-
 	"golang.org/x/crypto/bcrypt"
 	r "gopkg.in/dancannon/gorethink.v2"
-	"time"
 )
 
 type Store struct {
@@ -69,28 +69,36 @@ func (s *Store) GetWithUsername(username string) (user *userdb.User, err error) 
 	return
 }
 
-func (s *Store) Check(username, password string) error {
-	cursor, err := r.Table(table).GetAllByIndex("username", username).Pluck("password").Run(s.session)
+func (s *Store) checkWithIndex(indexName, indexValue, password string) (userid string, err error) {
+	cursor, err := r.Table(table).GetAllByIndex(indexName, indexValue).Pluck("id", "password").Run(s.session)
 	if err != nil {
 		bcrypt.CompareHashAndPassword([]byte(""), []byte(password))
-		return err
+		return "", err
 	}
 	defer cursor.Close()
 
-	var data map[string][]byte
-	err = cursor.One(&data)
+	user := userdb.User{}
+	err = cursor.One(&user)
 	if err != nil {
 		// No such user, prevent timing atack
 		bcrypt.CompareHashAndPassword([]byte(""), []byte(password))
-		return core.ErrorAuthenticationFailure
+		return "", core.ErrorAuthenticationFailure
 	}
 
-	err = bcrypt.CompareHashAndPassword(data["password"], []byte(password))
+	err = bcrypt.CompareHashAndPassword(user.Password, []byte(password))
 	if err != nil {
-		return core.ErrorAuthenticationFailure
+		return "", core.ErrorAuthenticationFailure
 	}
 
-	return nil
+	return user.ID, nil
+}
+
+func (s *Store) Check(username, password string) (userid string, err error) {
+	return s.checkWithIndex("username", username, password)
+}
+
+func (s *Store) CheckWithEmail(email, password string) (userid string, err error) {
+	return s.checkWithIndex("email", email, password)
 }
 
 func (s *Store) count(indexName, value string) (uint, error) {
