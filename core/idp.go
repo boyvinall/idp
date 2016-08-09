@@ -277,7 +277,8 @@ func (idp *IDP) GetClient(clientID string) (*hclient.Client, error) {
 	return c, nil
 }
 
-func (idp *IDP) NewChallenge(r *http.Request, user string) (challenge *Challenge, err error) {
+// NewChallenge creates a Challenge for the specified subject (user)
+func (idp *IDP) NewChallenge(r *http.Request, subject string) (challenge *Challenge, err error) {
 	tokenStr := r.FormValue("challenge")
 	if tokenStr == "" {
 		// No challenge token
@@ -307,7 +308,7 @@ func (idp *IDP) NewChallenge(r *http.Request, user string) (challenge *Challenge
 	}
 
 	challenge.Redirect = claims["redir"].(string)
-	challenge.User = user
+	challenge.Subject = subject
 	challenge.idp = idp
 
 	scopes := claims["scp"].([]interface{})

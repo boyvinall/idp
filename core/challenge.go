@@ -3,11 +3,11 @@ package core
 import (
 	"encoding/gob"
 	"fmt"
-	jwt "github.com/dgrijalva/jwt-go"
-	// "github.com/gorilla/sessions"
-	hclient "github.com/ory-am/hydra/client"
 	"net/http"
 	"time"
+
+	jwt "github.com/dgrijalva/jwt-go"
+	hclient "github.com/ory-am/hydra/client"
 )
 
 const (
@@ -26,7 +26,7 @@ type Challenge struct {
 	Scopes   []string
 
 	// Set in the challenge endpoint, after authenticated.
-	User string
+	Subject string
 }
 
 func init() {
@@ -82,7 +82,7 @@ func (c *Challenge) GrantAccessToAll(w http.ResponseWriter, r *http.Request) err
 	claims["exp"] = now.Add(time.Minute * 5).Unix()
 	claims["iat"] = now.Unix()
 	claims["scp"] = c.Scopes
-	claims["sub"] = c.User
+	claims["sub"] = c.Subject
 
 	// Sign and get the complete encoded token as a string
 	key, err := c.idp.GetConsentKey()
