@@ -1,20 +1,23 @@
 package helpers
 
 import (
-	"github.com/nu7hatch/gouuid"
-	gomail "gopkg.in/gomail.v2"
 	"html/template"
 	"io"
+
+	"github.com/satori/go.uuid"
+	gomail "gopkg.in/gomail.v2"
 )
 
 type EmailerOpts struct {
-	Host         string
-	Port         int
-	User         string
-	Password     string
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Secure   bool
+
 	From         string
 	Subject      string
-	Domain       string
+	Domain       string // used for the Message-Id header
 	TextTemplate *template.Template
 	HtmlTemplate *template.Template
 }
@@ -50,7 +53,14 @@ func NewEmailer(opt EmailerOpts) (*Emailer, error) {
 	}
 
 	// Dialer will send emails
-	e.dialer = gomail.NewDialer(opt.Host, opt.Port, opt.User, opt.Password)
+	e.dialer = &gomail.Dialer{
+		Host:     opt.Host,
+		Port:     opt.Port,
+		Username: opt.User,
+		Password: opt.Password,
+		SSL:      opt.Secure,
+		// LocalName: opt.Domain,
+	}
 
 	return e, nil
 }
@@ -58,15 +68,12 @@ func NewEmailer(opt EmailerOpts) (*Emailer, error) {
 func (e *Emailer) Send(to string, args map[string]string) error {
 	// Set message-id to avoid spam filters
 	// <[uid]@[sendingdomain.com]>
-	id, err := uuid.NewV4()
-	if err != nil {
-		return err
-	}
+	id := uuid.NewV4()
 	e.msg.SetHeader("Message-Id", "<"+id.String()+"@"+e.opt.Domain+">")
 
 	e.data = &args
 	e.msg.SetHeader("To", to)
 
-	err = e.dialer.DialAndSend(e.msg)
+	err := e.dialer.DialAndSend(e.msg)
 	return err
 }
