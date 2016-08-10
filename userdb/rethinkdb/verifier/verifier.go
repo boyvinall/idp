@@ -1,9 +1,8 @@
 package verifier
 
 import (
+	"github.com/asaskevich/govalidator"
 	"github.com/janekolszak/idp/core"
-
-	// "fmt"
 	r "gopkg.in/dancannon/gorethink.v2"
 )
 
@@ -36,16 +35,30 @@ func (v *Verifier) Push(userID, username, email string) (code string, err error)
 	}
 
 	// TODO: Check result
-	resp, err := r.Table(v.table).Insert(request).RunWrite(v.session)
+	resp, err := r.Table(v.table).
+		Insert(request).
+		RunWrite(v.session)
 	return resp.GeneratedKeys[0], err
 }
 
 // Called from the http handler when the request code is received.
 // Gets the user id assigned to the code and removes the underlying Request from the database.
 func (v *Verifier) Verify(code string) (userID string, err error) {
-	resp, err := r.Table(v.table).Get(code).Delete(r.DeleteOpts{ReturnChanges: true}).RunWrite(v.session)
+	if !govalidator.IsUUIDv4(code) {
+		return "", core.ErrorBadRequest
+	}
+
+	resp, err := r.Table(v.table).
+		Get(code).
+		Delete(r.DeleteOpts{ReturnChanges: true}).
+		RunWrite(v.session)
 	if err != nil {
 		return
+	}
+
+	if len(resp.Changes) == 0 {
+		// code is a UUID but can't be found in the database
+		return "", core.ErrorNoSuchUser
 	}
 
 	// fmt.Println(resp.Changes[0])

@@ -4,10 +4,11 @@ import (
 	"github.com/janekolszak/idp/helpers"
 
 	"fmt"
-	r "gopkg.in/dancannon/gorethink.v2"
 	"net/url"
 	"sync"
 	"time"
+
+	r "gopkg.in/dancannon/gorethink.v2"
 )
 
 // Data received from RethinkDB in the Change feed
@@ -62,7 +63,10 @@ func NewWorker(opt WorkerOpts) (*Worker, error) {
 // Start the Worker that sends the verification emails.
 // VW will block waiting for new Requests.
 func (w *Worker) Start() error {
-	cursor, err := r.Table(w.table).Filter(map[string]interface{}{"sentCount": 0}).Changes(r.ChangesOpts{IncludeInitial: true}).Run(w.opt.Session)
+	cursor, err := r.Table(w.table).
+		Filter(map[string]interface{}{"sentCount": 0}).
+		Changes(r.ChangesOpts{IncludeInitial: true}).
+		Run(w.opt.Session)
 	if err != nil {
 		return err
 	}
