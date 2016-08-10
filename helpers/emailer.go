@@ -58,7 +58,7 @@ func NewEmailer(opt EmailerOpts) (*Emailer, error) {
 		Port:     opt.Port,
 		Username: opt.User,
 		Password: opt.Password,
-		SSL:      opt.Secure,
+		SSL:      opt.Secure, // gomail.NewDialer relies on port == 465
 		// LocalName: opt.Domain,
 	}
 
