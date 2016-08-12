@@ -125,6 +125,7 @@ func (w *Worker) run(dataChannel <-chan RequestChange) {
 			// Stopping
 			return
 		default:
+			time.Sleep(5 * time.Second)
 		}
 	}
 }
