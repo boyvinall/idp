@@ -50,7 +50,12 @@ type IDP struct {
 	client *http.Client
 
 	// Cache for all private and public keys
+	// - actually we're now only using this for refresh timing #sadface
+	// - TODO: apply better fix for key refresh
 	cache *cache.Cache
+
+	verifyPublicKey   *rsa.PublicKey
+	consentPrivateKey *rsa.PrivateKey
 
 	// Prepared cookie options for creating and deleting cookies
 	// TODO: Is this the best way to do this?
@@ -91,6 +96,11 @@ func (idp *IDP) CacheConsentKey() error {
 		// try to refresh the key once that timeout expires,
 		// otherwise we'll _never_ refresh the key again.
 		duration = idp.config.CacheCleanupInterval
+
+		// don't delete idp.consentPrivateKey .. the key could
+		// still be valid, better to use an old key than no key
+	} else {
+		idp.consentPrivateKey = consentKey
 	}
 
 	idp.cache.Set(ConsentPrivateKey, consentKey, duration)
@@ -107,6 +117,11 @@ func (idp *IDP) CacheVerificationKey() error {
 		// try to refresh the key once that timeout expires,
 		// otherwise we'll _never_ refresh the key again.
 		duration = idp.config.CacheCleanupInterval
+
+		// don't delete idp.verifyPublicKey .. the key could
+		// still be valid, better to use an old key than no key
+	} else {
+		idp.verifyPublicKey = verifyKey
 	}
 
 	idp.cache.Set(VerifyPublicKey, verifyKey, duration)
@@ -224,28 +239,18 @@ func (idp *IDP) getChallengeToken(challengeString string) (*jwt.Token, error) {
 }
 
 func (idp *IDP) GetConsentKey() (*rsa.PrivateKey, error) {
-	data, ok := idp.cache.Get(ConsentPrivateKey)
-	if !ok {
+	key := idp.consentPrivateKey
+	if key == nil {
 		return nil, ErrorNotInCache
-	}
-
-	key, ok := data.(*rsa.PrivateKey)
-	if !ok {
-		return nil, ErrorBadKey
 	}
 
 	return key, nil
 }
 
 func (idp *IDP) GetVerificationKey() (*rsa.PublicKey, error) {
-	data, ok := idp.cache.Get(VerifyPublicKey)
-	if !ok {
+	key := idp.verifyPublicKey
+	if key == nil {
 		return nil, ErrorNotInCache
-	}
-
-	key, ok := data.(*rsa.PublicKey)
-	if !ok {
-		return nil, ErrorBadKey
 	}
 
 	return key, nil
@@ -268,7 +273,7 @@ func (idp *IDP) GetClient(clientID string) (*hclient.Client, error) {
 		// Either the client isn't registered in hydra, or maybe hydra is
 		// having some problem. Either way, ensure we don't hit hydra again
 		// for this client if someone (maybe an attacker) retries quickly.
-		idp.cache.Set(clientKey, nil, idp.config.ClientCacheExpiration)
+		idp.cache.Set(clientKey, nil, idp.config.CacheCleanupInterval)
 		return nil, err
 	}
 
